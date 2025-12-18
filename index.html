@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>AoE4 Knowledge Challenge</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <div id="app" class="app">
+    <!-- Top progress (discreto, sem números) -->
+    <div class="top-progress-wrap" aria-hidden="true">
+      <div id="topProgress" class="top-progress"></div>
+    </div>
+
+    <!-- LANDING -->
+    <section id="screenLanding" class="screen active">
+      <div class="hero">
+        <img class="hero-logo" src="assets/logo.png" alt="Logo" onerror="this.style.display='none'">
+        <h1 class="title">AoE4 Knowledge Challenge</h1>
+        <p class="subtitle">Teste seu conhecimento e dispute o topo do ranking.</p>
+        <button id="btnStart" class="btn btn-primary">COMEÇAR</button>
+        <div class="hint">Melhor no celular · som ativado após tocar em um botão</div>
+      </div>
+    </section>
+
+    <!-- NAME -->
+    <section id="screenName" class="screen">
+      <div class="card">
+        <h2 class="card-title">Seu nome</h2>
+        <p class="card-subtitle">Digite como você quer aparecer no resultado.</p>
+        <label class="field">
+          <span class="field-label">Nome</span>
+          <input id="playerName" class="input" type="text" maxlength="24" placeholder="ex.: IMBR | Mayllows" />
+        </label>
+        <button id="btnBegin" class="btn btn-primary">INICIAR QUIZ</button>
+        <button id="btnBackToLanding" class="btn btn-ghost">VOLTAR</button>
+      </div>
+    </section>
+
+    <!-- QUIZ -->
+    <section id="screenQuiz" class="screen">
+      <div class="quiz-wrap">
+        <div class="card quiz-card">
+          <div class="timer-wrap" aria-hidden="true">
+            <div id="timerBar" class="timer-bar"></div>
+          </div>
+
+          <div class="question">
+            <div id="questionText" class="question-text">Carregando pergunta...</div>
+          </div>
+
+          <div id="answers" class="answers"></div>
+
+          <div class="actions">
+            <button id="btnSkip" class="btn btn-ghost btn-wide">PULAR</button>
+            <button id="btnConfirm" class="btn btn-primary btn-wide" disabled>CONFIRMAR</button>
+          </div>
+
+          <div class="microhint">Dica: respostas em até 7s valem pontuação máxima.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- LOADING -->
+    <section id="screenLoading" class="screen">
+      <div class="hero">
+        <div class="spinner"></div>
+        <h2 class="title-sm">Calculando pontuação...</h2>
+        <p class="subtitle">Aguarde um momento.</p>
+        <div class="loading-bar-wrap" aria-hidden="true">
+          <div id="loadingBar" class="loading-bar"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RESULT -->
+    <section id="screenResult" class="screen">
+      <div class="result-wrap">
+        <div id="resultCard" class="card result-card">
+          <img id="resultBadge" class="result-badge" src="assets/badge_bronze.png" alt="Badge" onerror="this.style.display='none'">
+          <div id="resultTitle" class="result-title">Resultado</div>
+          <div id="resultScore" class="result-score">0</div>
+          <div id="resultName" class="result-name">—</div>
+          <div class="result-foot">AoE4 Knowledge Challenge</div>
+        </div>
+
+        <button id="btnShare" class="btn btn-primary">COMPARTILHAR</button>
+        <button id="btnPlayAgain" class="btn btn-ghost">JOGAR DE NOVO</button>
+
+        <div class="share-fallback">
+          <button id="btnDownloadImage" class="btn btn-ghost">BAIXAR IMAGEM</button>
+          <button id="btnCopyText" class="btn btn-ghost">COPIAR TEXTO + LINK</button>
+          <div id="copyStatus" class="copy-status"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- html2canvas para gerar imagem do resultado -->
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
