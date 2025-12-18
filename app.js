@@ -1,0 +1,791 @@
+/* AoE4 Knowledge Challenge
+   - Puxa CSV do Google Sheets
+   - Sorteio balanceado (sem mostrar nº de perguntas/áreas)
+   - Timer 30s + barra, timeout auto-avança
+   - Tempo: <=7s = 1.0; 7..25 linear até 0.2; 25..30 = 0.2; >=30 timeout
+   - Skip: joga questão pro fim mantendo tempo já gasto (elapsedCarry)
+   - Score: value * timeFactor * streakMult, normalizado para 1000
+   - Anti-chute: penaliza padrão "difícil>fácil" e erro rápido em MC
+   - Share: gera imagem do resultado via html2canvas + Web Share (fallback download/copy)
+*/
+
+const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS8-JmKMHKyf9xImMtoN30e_8Yc3KhAeoVcfdSUeC3jkqaofIEPkz-6lCJRf1FohCbQFpKxhaevCndB/pub?output=csv";
+
+// Config do quiz
+const QUIZ_SIZE = 24;
+const TIME_LIMIT_MS = 30000;
+
+// Cotas (equilibrado)
+const QUOTAS = {
+  difficulty: { Easy: 6, Medium: 8, Hard: 6, Elite: 4 },
+  type: { MC: 18, TF: 6 },
+  area: { Mechanics: 6, Units: 6, Civs: 6, Strategy: 6 },
+};
+
+// Assets genéricos (você substitui depois)
+const ASSETS = {
+  sfx: {
+    wololo: "assets/sfx_wololo.mp3",
+    horn: "assets/sfx_horn.mp3",
+    victory: "assets/sfx_victory.mp3",
+  },
+  badges: [
+    { min: 0,   key: "bronze",     src: "assets/badge_bronze.png",     title: "Bronze" },
+    { min: 200, key: "silver",     src: "assets/badge_silver.png",     title: "Silver" },
+    { min: 400, key: "gold",       src: "assets/badge_gold.png",       title: "Gold" },
+    { min: 600, key: "platinum",   src: "assets/badge_platinum.png",   title: "Platinum" },
+    { min: 750, key: "diamond",    src: "assets/badge_diamond.png",    title: "Diamond" },
+    { min: 900, key: "conqueror",  src: "assets/badge_conqueror.png",  title: "Conqueror" },
+  ],
+};
+
+const el = (id) => document.getElementById(id);
+
+// Screens
+const screenLanding = el("screenLanding");
+const screenName = el("screenName");
+const screenQuiz = el("screenQuiz");
+const screenLoading = el("screenLoading");
+const screenResult = el("screenResult");
+
+// UI
+const topProgress = el("topProgress");
+const timerBar = el("timerBar");
+const questionText = el("questionText");
+const answersWrap = el("answers");
+const btnStart = el("btnStart");
+const btnBegin = el("btnBegin");
+const btnBackToLanding = el("btnBackToLanding");
+const btnSkip = el("btnSkip");
+const btnConfirm = el("btnConfirm");
+const playerNameInput = el("playerName");
+
+const loadingBar = el("loadingBar");
+const resultCard = el("resultCard");
+const resultBadge = el("resultBadge");
+const resultTitle = el("resultTitle");
+const resultScore = el("resultScore");
+const resultName = el("resultName");
+const btnShare = el("btnShare");
+const btnPlayAgain = el("btnPlayAgain");
+const btnDownloadImage = el("btnDownloadImage");
+const btnCopyText = el("btnCopyText");
+const copyStatus = el("copyStatus");
+
+// Audio
+const audio = {
+  wololo: new Audio(ASSETS.sfx.wololo),
+  horn: new Audio(ASSETS.sfx.horn),
+  victory: new Audio(ASSETS.sfx.victory),
+};
+Object.values(audio).forEach(a => { a.preload = "auto"; a.volume = 0.85; });
+
+let audioUnlocked = false;
+async function unlockAudio() {
+  if (audioUnlocked) return;
+  audioUnlocked = true;
+  // tentativa de “desbloquear” no mobile
+  try {
+    for (const a of Object.values(audio)) {
+      a.muted = true;
+      await a.play();
+      a.pause();
+      a.currentTime = 0;
+      a.muted = false;
+    }
+  } catch (_) { /* ok */ }
+}
+function playSfx(key) {
+  const a = audio[key];
+  if (!a) return;
+  try {
+    a.currentTime = 0;
+    a.play();
+  } catch (_) {}
+}
+
+// Data
+let allQuestions = [];
+let quizQueue = [];         // array de questões sorteadas (com elapsedCarry etc.)
+let currentIndex = 0;
+let selectedAnswerCol = null; // 'F','G','H','I'
+let questionStartTs = 0;      // performance.now()
+let timerRaf = null;
+let playerName = "";
+
+// Scoring state
+let streak = 0;
+let rawPoints = 0;
+let maxRawPoints = 0; // máximo teórico do conjunto sorteado
+let stats = {
+  byDifficulty: { Easy: { correct:0, total:0 }, Medium:{correct:0,total:0}, Hard:{correct:0,total:0}, Elite:{correct:0,total:0} },
+  fastWrongMC: { fastWrong:0, totalWrong:0 },
+};
+
+function showScreen(screen) {
+  [screenLanding, screenName, screenQuiz, screenLoading, screenResult].forEach(s => s.classList.remove("active"));
+  screen.classList.add("active");
+}
+
+function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
+
+function normalizeToken(s) {
+  return String(s ?? "").trim();
+}
+
+// CSV parser robusto (aspas)
+function parseCSV(text) {
+  const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").filter(l => l.trim().length > 0);
+  if (!lines.length) return [];
+  // detect delimiter from header line (prefer ; if present)
+  const headerLine = lines[0];
+  const delim = headerLine.includes(";") ? ";" : ",";
+  const rows = [];
+  for (const line of lines) {
+    rows.push(parseCSVLine(line, delim));
+  }
+  return { rows, delim };
+}
+
+function parseCSVLine(line, delim) {
+  const out = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      // double quotes escape
+      if (inQuotes && line[i+1] === '"') {
+        cur += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (!inQuotes && ch === delim) {
+      out.push(cur);
+      cur = "";
+      continue;
+    }
+    cur += ch;
+  }
+  out.push(cur);
+  return out.map(v => v.trim());
+}
+
+function mapRowToQuestion(row) {
+  // Esperado: A..K
+  // questid;value;type;answer;quest;res1;res2;res3;res4;area;difficulty
+  const qid = normalizeToken(row[0]);
+  const value = Number(String(row[1] ?? "").replace(",", ".")) || 0;
+  const type = normalizeToken(row[2]).toUpperCase(); // MC / TF
+  const answer = normalizeToken(row[3]).toUpperCase(); // F/G/H/I
+  const quest = normalizeToken(row[4]);
+  const r1 = row[5] ?? "";
+  const r2 = row[6] ?? "";
+  const r3 = row[7] ?? "";
+  const r4 = row[8] ?? "";
+  const area = normalizeToken(row[9]) || "Unknown";
+  const difficulty = normalizeToken(row[10]) || "Medium";
+
+  if (!qid || qid.toLowerCase() === "questid") return null;
+  if (!quest) return null;
+  if (!["MC","TF"].includes(type)) return null;
+  if (!["F","G","H","I"].includes(answer)) return null;
+
+  const options = [
+    { col: "F", text: String(r1 || "").trim() },
+    { col: "G", text: String(r2 || "").trim() },
+    { col: "H", text: String(r3 || "").trim() },
+    { col: "I", text: String(r4 || "").trim() },
+  ];
+
+  // TF: só F e G
+  const cleanOptions = type === "TF" ? options.slice(0,2) : options;
+
+  return {
+    id: qid,
+    value,
+    type,
+    answerCol: answer,
+    text: quest,
+    options: cleanOptions,
+    area,
+    difficulty,
+    // runtime
+    elapsedCarryMs: 0,
+    answered: false,
+  };
+}
+
+async function loadQuestions() {
+  const resp = await fetch(CSV_URL, { cache: "no-store" });
+  if (!resp.ok) throw new Error("Falha ao carregar CSV.");
+  const text = await resp.text();
+  const parsed = parseCSV(text);
+  const rows = parsed.rows;
+
+  const questions = [];
+  for (let i = 1; i < rows.length; i++) {
+    const q = mapRowToQuestion(rows[i]);
+    if (q) questions.push(q);
+  }
+  return questions;
+}
+
+// Sorteio equilibrado (area + difficulty + type).
+function buildQuizSet(all) {
+  // Normaliza rótulos exatamente como quotas
+  const canon = (s) => {
+    const t = String(s||"").trim();
+    const map = {
+      mechanics:"Mechanics", units:"Units", civs:"Civs", strategy:"Strategy",
+      easy:"Easy", medium:"Medium", hard:"Hard", elite:"Elite",
+    };
+    const key = t.toLowerCase();
+    return map[key] || t;
+  };
+
+  const pool = all.map(q => ({
+    ...q,
+    area: canon(q.area),
+    difficulty: canon(q.difficulty),
+    type: q.type.toUpperCase(),
+  }));
+
+  // Índices por bucket
+  const byBucket = new Map();
+  const keyOf = (area, diff, type) => `${area}||${diff}||${type}`;
+  for (const q of pool) {
+    const k = keyOf(q.area, q.difficulty, q.type);
+    if (!byBucket.has(k)) byBucket.set(k, []);
+    byBucket.get(k).push(q);
+  }
+  // embaralha cada bucket
+  for (const arr of byBucket.values()) shuffleInPlace(arr);
+
+  const picked = [];
+  const usedIds = new Set();
+
+  // 1) Preenche por (area x difficulty) garantindo 6 por área e quotas de dificuldade no total
+  // Estratégia: construir lista alvo por difficulty e depois distribuir por área.
+  const targetByDiff = { ...QUOTAS.difficulty };
+  const targetByArea = { ...QUOTAS.area };
+  const targetByType = { ...QUOTAS.type };
+
+  // cria lista de “slots” com prioridade: Elite, Hard, Medium, Easy (pra não faltar os raros)
+  const diffOrder = ["Elite","Hard","Medium","Easy"];
+
+  // helper: tenta pegar 1 questão que satisfaça (area,diff) preferindo type disponível
+  function pickOne(area, diff) {
+    // tenta MC/TF conforme ainda precisa
+    const typePref = (targetByType.MC >= targetByType.TF) ? ["MC","TF"] : ["TF","MC"];
+    for (const t of typePref) {
+      const k = keyOf(area, diff, t);
+      const bucket = byBucket.get(k) || [];
+      while (bucket.length) {
+        const q = bucket.pop();
+        if (usedIds.has(q.id)) continue;
+        usedIds.add(q.id);
+        picked.push(structuredCloneQuestion(q));
+        targetByType[t] = Math.max(0, targetByType[t] - 1);
+        return true;
+      }
+    }
+    // relaxa type (pega qualquer)
+    for (const t of ["MC","TF"]) {
+      const k = keyOf(area, diff, t);
+      const bucket = byBucket.get(k) || [];
+      while (bucket.length) {
+        const q = bucket.pop();
+        if (usedIds.has(q.id)) continue;
+        usedIds.add(q.id);
+        picked.push(structuredCloneQuestion(q));
+        // não ajusta targetByType aqui (vamos ajustar depois), mas isso é raro
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Distribui: roda por difficulty (mais raro primeiro), e dentro por áreas que ainda precisam
+  for (const diff of diffOrder) {
+    while (targetByDiff[diff] > 0) {
+      // escolha uma área que ainda precisa
+      const areasNeeding = Object.keys(targetByArea).filter(a => targetByArea[a] > 0);
+      if (!areasNeeding.length) break;
+      // pega uma área aleatória entre as que precisam
+      const area = areasNeeding[Math.floor(Math.random() * areasNeeding.length)];
+      const ok = pickOne(area, diff);
+      if (!ok) {
+        // se não deu, tenta outras áreas
+        let found = false;
+        for (const a of areasNeeding) {
+          if (pickOne(a, diff)) { found = true; break; }
+        }
+        if (!found) break; // sem estoque
+      }
+      targetByDiff[diff]--;
+      targetByArea[area]--;
+    }
+  }
+
+  // Se ainda faltou completar 24, completa com qualquer coisa não usada (preferindo manter quotas de type)
+  if (picked.length < QUIZ_SIZE) {
+    const remaining = pool.filter(q => !usedIds.has(q.id));
+    shuffleInPlace(remaining);
+    while (picked.length < QUIZ_SIZE && remaining.length) {
+      const q = remaining.pop();
+      picked.push(structuredCloneQuestion(q));
+    }
+  }
+
+  // Ajuste final de types (pra tentar manter 18/6) — opcional, não crítico
+  // Embaralha o set final
+  shuffleInPlace(picked);
+
+  // Calcula MaxRaw do set (streak perfeito + timeFactor=1)
+  maxRawPoints = computeMaxRaw(picked);
+
+  return picked.slice(0, QUIZ_SIZE);
+}
+
+function structuredCloneQuestion(q) {
+  return {
+    id: q.id,
+    value: q.value,
+    type: q.type,
+    answerCol: q.answerCol,
+    text: q.text,
+    options: q.options.map(o => ({...o})),
+    area: q.area,
+    difficulty: q.difficulty,
+    elapsedCarryMs: 0,
+    answered: false,
+  };
+}
+
+function shuffleInPlace(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
+function computeMaxRaw(set) {
+  // streak perfeito: acerta todas, streakMult cresce até 1.25
+  let s = 0;
+  let max = 0;
+  for (const q of set) {
+    s += 1;
+    const streakMult = Math.min(1.25, 1 + 0.05 * s);
+    max += (q.value || 0) * 1.0 * streakMult;
+  }
+  return max || 1;
+}
+
+// timeFactor do jeito que você pediu
+function timeFactorFromElapsed(elapsedMs) {
+  const t = elapsedMs / 1000;
+  if (t <= 7) return 1.0;
+  if (t < 25) {
+    return 1.0 - ((t - 7) / 18) * 0.8; // 1.0 -> 0.2
+  }
+  if (t < 30) return 0.2;
+  return 0.0; // timeout
+}
+
+function updateTopProgress() {
+  // sem números; só progresso discreto
+  const done = currentIndex; // questões já finalizadas
+  const pct = clamp((done / QUIZ_SIZE) * 100, 0, 100);
+  topProgress.style.width = `${pct}%`;
+}
+
+function renderQuestion() {
+  selectedAnswerCol = null;
+  btnConfirm.disabled = true;
+
+  const q = quizQueue[currentIndex];
+  if (!q) return;
+
+  // Texto
+  questionText.textContent = q.text;
+
+  // Respostas
+  answersWrap.innerHTML = "";
+  for (const opt of q.options) {
+    const b = document.createElement("button");
+    b.className = "answer-btn";
+    b.type = "button";
+    b.textContent = opt.text;
+    b.dataset.col = opt.col;
+    b.addEventListener("click", () => {
+      // select
+      answersWrap.querySelectorAll(".answer-btn").forEach(x => x.classList.remove("selected"));
+      b.classList.add("selected");
+      selectedAnswerCol = opt.col;
+      btnConfirm.disabled = false;
+    });
+    answersWrap.appendChild(b);
+  }
+
+  // Timer start
+  questionStartTs = performance.now();
+  startTimerLoop();
+}
+
+function startTimerLoop() {
+  cancelAnimationFrame(timerRaf);
+  const q = quizQueue[currentIndex];
+  const carry = q.elapsedCarryMs || 0;
+
+  const tick = () => {
+    const now = performance.now();
+    const elapsed = (now - questionStartTs) + carry;
+    const remaining = Math.max(0, TIME_LIMIT_MS - elapsed);
+    const ratio = remaining / TIME_LIMIT_MS;
+    timerBar.style.width = `${clamp(ratio * 100, 0, 100)}%`;
+
+    if (elapsed >= TIME_LIMIT_MS) {
+      // timeout -> auto-avança como erro/sem resposta
+      handleAnswer(null, true);
+      return;
+    }
+    timerRaf = requestAnimationFrame(tick);
+  };
+  timerRaf = requestAnimationFrame(tick);
+}
+
+function stopTimerLoop() {
+  cancelAnimationFrame(timerRaf);
+  timerRaf = null;
+}
+
+// PULAR: joga questão pro fim mantendo tempo consumido
+function skipQuestion() {
+  const q = quizQueue[currentIndex];
+  const elapsedNow = (performance.now() - questionStartTs);
+  q.elapsedCarryMs = (q.elapsedCarryMs || 0) + elapsedNow;
+
+  stopTimerLoop();
+
+  // remove do índice atual e empurra pro fim
+  quizQueue.splice(currentIndex, 1);
+  quizQueue.push(q);
+
+  // não incrementa currentIndex (pois o próximo agora ocupa esse índice)
+  renderQuestion();
+}
+
+// Confirma resposta (avança)
+function confirmAnswer() {
+  if (!selectedAnswerCol) return;
+  handleAnswer(selectedAnswerCol, false);
+}
+
+function handleAnswer(chosenCol, isTimeout) {
+  const q = quizQueue[currentIndex];
+  const elapsedNow = (performance.now() - questionStartTs);
+  const totalElapsed = (q.elapsedCarryMs || 0) + elapsedNow;
+
+  stopTimerLoop();
+
+  const correct = (!isTimeout && chosenCol && chosenCol === q.answerCol);
+  const tFactor = correct ? timeFactorFromElapsed(totalElapsed) : 0;
+
+  // stats difficulty
+  const diff = (q.difficulty || "Medium");
+  if (stats.byDifficulty[diff]) {
+    stats.byDifficulty[diff].total += 1;
+    if (correct) stats.byDifficulty[diff].correct += 1;
+  }
+
+  // fast-wrong MC
+  if (!correct && q.type === "MC") {
+    stats.fastWrongMC.totalWrong += 1;
+    if (totalElapsed <= 3000) stats.fastWrongMC.fastWrong += 1;
+  }
+
+  // scoring raw
+  if (correct) {
+    streak += 1;
+    const streakMult = Math.min(1.25, 1 + 0.05 * streak);
+    const gained = (q.value || 0) * tFactor * streakMult;
+    rawPoints += gained;
+  } else {
+    streak = 0;
+  }
+
+  // Avança
+  q.answered = true;
+
+  // SFX: trombeta ao confirmar / avançar (não no timeout)
+  if (!isTimeout) playSfx("horn");
+
+  currentIndex += 1;
+  updateTopProgress();
+
+  if (currentIndex >= QUIZ_SIZE) {
+    finishQuiz();
+  } else {
+    renderQuestion();
+  }
+}
+
+function computeAntiGuessFactors() {
+  const acc = (d) => {
+    const o = stats.byDifficulty[d];
+    if (!o || o.total === 0) return 0;
+    return o.correct / o.total;
+  };
+  const accEasy = acc("Easy");
+  const accHard = acc("Hard");
+  const accElite = acc("Elite");
+
+  let consistency = 1.0;
+  if (accEasy < 0.50) consistency -= 0.10;
+  if ((accHard - accEasy) >= 0.35) consistency -= 0.15;
+  if ((accElite - accEasy) >= 0.35) consistency -= 0.20;
+  consistency = clamp(consistency, 0.60, 1.00);
+
+  let guess = 1.0;
+  const totalWrong = stats.fastWrongMC.totalWrong || 0;
+  const fastWrong = stats.fastWrongMC.fastWrong || 0;
+  const fastWrongRate = totalWrong ? (fastWrong / totalWrong) : 0;
+
+  if (fastWrongRate >= 0.40) guess -= 0.10;
+  if (fastWrongRate >= 0.55) guess -= 0.10;
+  guess = clamp(guess, 0.70, 1.00);
+
+  return { consistency, guess };
+}
+
+function finishQuiz() {
+  showScreen(screenLoading);
+  // loading 10s com barra
+  const duration = 10000;
+  const start = performance.now();
+  loadingBar.style.width = "0%";
+
+  const step = () => {
+    const now = performance.now();
+    const p = clamp((now - start) / duration, 0, 1);
+    loadingBar.style.width = `${(p * 100).toFixed(1)}%`;
+    if (p < 1) requestAnimationFrame(step);
+    else showResult();
+  };
+  requestAnimationFrame(step);
+}
+
+function pickBadge(score) {
+  // escolhe o maior min <= score
+  let chosen = ASSETS.badges[0];
+  for (const b of ASSETS.badges) {
+    if (score >= b.min) chosen = b;
+  }
+  return chosen;
+}
+
+function showResult() {
+  // normaliza para 1000
+  let score = Math.round(1000 * (rawPoints / (maxRawPoints || 1)));
+  score = clamp(score, 0, 1000);
+
+  // anti-chute
+  const { consistency, guess } = computeAntiGuessFactors();
+  const finalScore = clamp(Math.round(score * consistency * guess), 0, 1000);
+
+  // badge
+  const badge = pickBadge(finalScore);
+  resultBadge.src = badge.src;
+  resultTitle.textContent = badge.title;
+  resultScore.textContent = String(finalScore);
+  resultName.textContent = playerName || "—";
+
+  updateTopProgress();
+  topProgress.style.width = "100%";
+
+  showScreen(screenResult);
+  playSfx("victory");
+
+  // prepara texto de share
+  copyStatus.textContent = "";
+  btnDownloadImage.style.display = "none"; // aparece após gerar
+}
+
+async function makeResultImageBlob() {
+  // renderiza o card do resultado como PNG
+  const canvas = await html2canvas(resultCard, {
+    backgroundColor: null,
+    scale: Math.min(2, window.devicePixelRatio || 1.5),
+    useCORS: true,
+  });
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => resolve(blob), "image/png", 0.92);
+  });
+}
+
+function buildShareText(score) {
+  const url = window.location.href;
+  return `Fiz ${score} pontos no AoE4 Knowledge Challenge! 🔥 Consegue bater?\nJoga aqui: ${url}`;
+}
+
+async function shareResult() {
+  const score = resultScore.textContent || "0";
+  const text = buildShareText(score);
+  const url = window.location.href;
+
+  let blob = null;
+  try {
+    blob = await makeResultImageBlob();
+  } catch (e) {
+    // ok, cai no share sem imagem
+  }
+
+  // tenta Web Share com arquivo (Android costuma suportar)
+  if (navigator.share) {
+    try {
+      if (blob) {
+        const file = new File([blob], "resultado.png", { type: "image/png" });
+        const shareData = { title: "AoE4 Knowledge Challenge", text, url, files: [file] };
+        // alguns browsers exigem canShare
+        if (!navigator.canShare || navigator.canShare(shareData)) {
+          await navigator.share(shareData);
+          return;
+        }
+      }
+      await navigator.share({ title: "AoE4 Knowledge Challenge", text, url });
+      return;
+    } catch (_) {
+      // usuário cancelou ou browser bloqueou
+    }
+  }
+
+  // fallback: mostra botões baixar/copiar
+  if (blob) {
+    btnDownloadImage.style.display = "block";
+    btnDownloadImage.onclick = () => downloadBlob(blob, "resultado.png");
+  }
+  btnCopyText.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      copyStatus.textContent = "Texto + link copiados!";
+    } catch {
+      copyStatus.textContent = "Não consegui copiar automaticamente. Selecione e copie manualmente.";
+    }
+  };
+
+  copyStatus.textContent = "Seu navegador não permitiu compartilhar direto. Use BAIXAR IMAGEM ou COPIAR TEXTO + LINK.";
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function resetGameState() {
+  quizQueue = [];
+  currentIndex = 0;
+  selectedAnswerCol = null;
+  streak = 0;
+  rawPoints = 0;
+  maxRawPoints = 1;
+  stats = {
+    byDifficulty: { Easy: { correct:0, total:0 }, Medium:{correct:0,total:0}, Hard:{correct:0,total:0}, Elite:{correct:0,total:0} },
+    fastWrongMC: { fastWrong:0, totalWrong:0 },
+  };
+  timerBar.style.width = "100%";
+  topProgress.style.width = "0%";
+}
+
+async function startQuizFlow() {
+  resetGameState();
+  showScreen(screenQuiz);
+
+  // sorteia set
+  quizQueue = buildQuizSet(allQuestions);
+  currentIndex = 0;
+  updateTopProgress();
+
+  // wololo ao entrar na primeira pergunta
+  playSfx("wololo");
+  renderQuestion();
+}
+
+// Events
+btnStart.addEventListener("click", async () => {
+  await unlockAudio();
+  showScreen(screenName);
+  playerNameInput.focus();
+});
+
+btnBackToLanding.addEventListener("click", async () => {
+  await unlockAudio();
+  showScreen(screenLanding);
+});
+
+btnBegin.addEventListener("click", async () => {
+  await unlockAudio();
+  playerName = playerNameInput.value.trim();
+  if (!playerName) playerName = "Player";
+  await startQuizFlow();
+});
+
+btnSkip.addEventListener("click", async () => {
+  await unlockAudio();
+  skipQuestion();
+});
+
+btnConfirm.addEventListener("click", async () => {
+  await unlockAudio();
+  confirmAnswer();
+});
+
+btnPlayAgain.addEventListener("click", async () => {
+  await unlockAudio();
+  showScreen(screenName);
+  playerNameInput.focus();
+});
+
+btnShare.addEventListener("click", async () => {
+  await unlockAudio();
+  await shareResult();
+});
+
+btnDownloadImage.addEventListener("click", async () => {
+  await unlockAudio();
+  // o handler real é setado no fallback do shareResult
+});
+
+btnCopyText.addEventListener("click", async () => {
+  await unlockAudio();
+  // o handler real é setado no fallback do shareResult
+});
+
+// Init
+(async function init() {
+  showScreen(screenLanding);
+  topProgress.style.width = "0%";
+
+  try {
+    allQuestions = await loadQuestions();
+    if (!allQuestions.length) {
+      questionText.textContent = "Não encontrei perguntas na planilha.";
+    }
+  } catch (e) {
+    console.error(e);
+    // deixa um aviso simples na landing
+    const p = document.createElement("p");
+    p.className = "subtitle";
+    p.textContent = "Não consegui carregar a planilha agora. Verifique se ela está publicada e acessível.";
+    screenLanding.querySelector(".hero").appendChild(p);
+  }
+})();
