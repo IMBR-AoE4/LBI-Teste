@@ -149,26 +149,29 @@ body.menu-open .mobile-menu{ display:block; }
 .overlay{
   position:absolute;
   inset:0;
+  z-index: 1;
+  pointer-events: none;
 }
 
+/* ✅ Overlay mais leve (antes estava “branco demais” e apagava a imagem) */
 .overlay-soft{
   background:
-    radial-gradient(1200px 650px at 25% 18%, rgba(255,255,255,.35), rgba(255,255,255,.65)),
-    linear-gradient(to bottom, rgba(255,255,255,.25), rgba(255,255,255,.70));
+    radial-gradient(1200px 650px at 25% 18%, rgba(255,255,255,.10), rgba(255,255,255,.22)),
+    linear-gradient(to bottom, rgba(255,255,255,.06), rgba(255,255,255,.26));
 }
 
 .overlay-hero{
   background:
-    radial-gradient(1100px 650px at 50% 25%, rgba(255,255,255,.20), rgba(255,255,255,.75)),
-    linear-gradient(to bottom, rgba(255,255,255,.15), rgba(255,255,255,.78));
+    radial-gradient(1100px 650px at 50% 25%, rgba(255,255,255,.08), rgba(255,255,255,.22)),
+    linear-gradient(to bottom, rgba(255,255,255,.05), rgba(255,255,255,.28));
 }
 
 .section .wrap{ position:relative; z-index:2; }
 
-/* BACKGROUNDS (imagens) */
-.bg-hero{ background-image: url("assets/background1.png"); }
-.bg-calendar{ background-image: url("assets/background3.png"); }
-.bg-sponsors{ background-image: url("assets/background5.png"); }
+/* BACKGROUNDS (imagens) — ✅ path mais seguro */
+.bg-hero{ background-image: url("./assets/background1.png"); }
+.bg-calendar{ background-image: url("./assets/background3.png"); }
+.bg-sponsors{ background-image: url("./assets/background5.png"); }
 
 /* seções sem imagem: gradientes claros */
 .bg-solid-1{
@@ -362,7 +365,6 @@ body.menu-open .mobile-menu{ display:block; }
 
 /* =========================
    CALENDÁRIO — HORIZONTAL
-   (precisa: class="events events-horizontal")
 ========================= */
 .events{
   display:flex;
@@ -370,7 +372,6 @@ body.menu-open .mobile-menu{ display:block; }
   gap: 12px;
 }
 
-/* ativa o modo horizontal */
 .events-horizontal{
   display: grid;
   grid-auto-flow: column;
