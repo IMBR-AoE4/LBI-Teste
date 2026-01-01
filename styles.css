@@ -196,9 +196,9 @@ body.menu-open .mobile-menu{ display:block; }
 
 
 /* BACKGROUNDS (imagens) — ✅ path mais seguro */
-.bg-hero::before{ background-image: url("./assets/background1.png"); }
-.bg-calendar::before{ background-image: url("./assets/background3.png"); }
-.bg-sponsors::before{ background-image: url("./assets/background5.png"); }
+.bg-hero::before{ background-image: url("./assets/bg1.png"); }
+.bg-calendar::before{ background-image: url("./assets/bg3.png"); }
+.bg-sponsors::before{ background-image: url("./assets/bg5.png"); }
 
 /* seções sem imagem: gradientes claros */
 .bg-solid-1{
