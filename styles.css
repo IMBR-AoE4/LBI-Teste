@@ -640,3 +640,25 @@ body.menu-open .mobile-menu{ display:block; }
     width: 280px;
   }
 }
+/* garante setas SEMPRE por cima */
+.carousel-btn{
+  position: relative;
+  z-index: 5;
+}
+
+/* garante que a área de cards CLIPA tudo (inclui shadow) */
+.events-carousel .events{
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+  overflow: clip; /* navegadores novos; ok manter junto */
+}
+
+/* (opcional, mas resolve o “4º partido”)
+   trava a largura da janela para mostrar exatamente 3 cards */
+@media (min-width: 980px){
+  .events-carousel .events{
+    max-width: calc(320px * 3 + 24px * 2); /* 3 cards + 2 gaps */
+    margin: 0 auto;
+  }
+}
