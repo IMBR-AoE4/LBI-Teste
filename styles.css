@@ -446,94 +446,58 @@ body.menu-open .mobile-menu{ display:block; }
 
 
 
+/* =========================
+   Carousel manual (sem autoplay)
+========================= */
+
 .events-carousel{
   position: relative;
   width: 100%;
   overflow: hidden;
+  padding: 6px 46px; /* espaço pras setas */
 }
 
-/* trilho ok */
+/* track */
 .events-carousel .events{
   display: flex !important;
+  flex-direction: row !important;
+  gap: 0 !important;
+  width: 100%;
+  will-change: transform;
+  transition: transform .35s ease;
 }
-/* visual mais “compacto”, parecido com o antigo */
+
+/* slide 100% do viewport do carousel */
+.events-carousel .event-row{
+  flex: 0 0 100% !important;
+  width: 100% !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+
+  /* neutraliza estilos antigos */
+  border: 0 !important;
+  background: transparent !important;
+  padding: 0 !important;
+  grid-template-columns: unset !important;
+}
+
+/* card compacto (do jeito “logo-first”) */
 .events-carousel .event-card{
   width: min(420px, 100%);
   padding: 14px;
   border: 1px solid rgba(11,18,32,.10);
   border-radius: var(--radius);
   background: rgba(255,255,255,.78);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-/* logo mais contido */
-.events-carousel .event-logo img{
-  max-height: 240px;
-}
-
-/* texto mais alinhado e leve */
-.events-carousel .event-name{
-  font-size: 18px;
-  margin: 0;
-}
-
-.events-carousel .event-desc{
-  margin: 0;
-  line-height: 1.5;
-}
-
-.events-carousel .event-tags{
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-/* SLIDE sempre 100% */
-.events-carousel .event-row{
-  flex: 0 0 100% !important;
-  width: 100% !important;
-
-  display: flex !important;
-  grid-template-columns: unset !important;
-  gap: 0 !important;
-
-  justify-content: center !important;
-  align-items: center !important;
-
-  border: 0 !important;
-  background: transparent !important;
-  padding: 0 !important;
-}
-
-
-
-/* CARD interno (limita largura sem quebrar o slide) */
-.events-carousel .event-row{
-  align-items: center;
-}
-
-.events-carousel .event-row > *{
-  border: 0;
-  padding: 0;
-  background: transparent;
-}
-
-.events-carousel .event-row{
-  max-width: min(640px, 100%);
-  margin: 0 auto;
-  padding: 14px;
-  border: 1px solid rgba(11,18,32,.10);
-  border-radius: var(--radius);
-  background: rgba(255,255,255,.78);
+  text-decoration: none;
+  color: inherit;
 
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-/* LOGO: limita tamanho para não “explodir” */
+/* logo contido */
 .events-carousel .event-logo{
   width: 100%;
   border-radius: 14px;
@@ -541,35 +505,40 @@ body.menu-open .mobile-menu{ display:block; }
   border: 1px solid rgba(11,18,32,.10);
   background: rgba(255,255,255,.70);
 }
-
-/* IMAGEM: limite de altura + mantém proporção */
 .events-carousel .event-logo img{
   width: 100%;
   height: auto;
-  max-height: 300px;       /* ajuste: 260–360 se quiser */
-  object-fit: contain;     /* não corta, só encaixa */
-  display: block;
+  max-height: 240px;
+  object-fit: contain;
 }
 
-/* texto do card */
-.events-carousel .event-name{
-  margin: 0;
-}
-
-/* Antes do JS iniciar, não aplica transform (mostra o 1º slide) */
-.events-carousel:not([data-carousel-init="1"]) .events{
-  transform: none !important;
-  transition: none !important;
-}
-
-/* Quando o JS marcar como iniciado, aí sim anima */
-.events-carousel[data-carousel-init="1"] .events{
-  transition: transform .6s ease;
-}
-
-/* Card clicável (link) sem ficar com cara de link */
-.events-carousel .event-card{
-  text-decoration: none;
-  color: inherit;
+/* setas */
+.carousel-btn{
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  border: 1px solid rgba(11,18,32,.14);
+  background: rgba(255,255,255,.78);
+  backdrop-filter: blur(10px);
   cursor: pointer;
+  font-size: 28px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  z-index: 3;
+  user-select: none;
 }
+.carousel-btn:hover{
+  background: rgba(255,255,255,.94);
+}
+.carousel-btn.prev{ left: 6px; }
+.carousel-btn.next{ right: 6px; }
+
+@media (max-width: 520px){
+  .events-carousel{ padding: 6px 44px; }
+  .events-carousel .event-card{ width: min(360px, 100%); }
+}
+
