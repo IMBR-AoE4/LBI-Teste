@@ -6,7 +6,7 @@
   const total = slides.length;
   let index = 0;
 
-  // clona primeiro e último para loop infinito
+  // clona primeiro e último para loop infinito 
   const firstClone = slides[0].cloneNode(true);
   const lastClone = slides[total - 1].cloneNode(true);
 
