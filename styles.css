@@ -548,3 +548,39 @@ body.menu-open .mobile-menu{ display:block; }
   font-size: 13px;
 }
 .footer .dot{ opacity:.6; }
+
+/* =========================
+   CAROUSEL – CALENDÁRIO
+========================= */
+.events-carousel{
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+}
+
+/* trilho */
+.events-carousel .events{
+  display: flex;
+  gap: 0;
+  transition: transform .6s ease;
+  will-change: transform;
+}
+
+/* cada slide */
+.events-carousel .event-row{
+  flex: 0 0 100%;
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+/* centralização real */
+.events-carousel .event-row{
+  display: flex;
+  justify-content: center;
+}
+
+/* remove scrollbars de vez */
+.events-horizontal{
+  overflow: hidden !important;
+}
+
