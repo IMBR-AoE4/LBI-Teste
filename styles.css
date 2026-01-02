@@ -445,7 +445,7 @@ body.menu-open .mobile-menu{ display:block; }
 .footer .dot{ opacity:.6; }
 
 /* =========================
-   CALENDÁRIO — CAROUSEL (fix definitivo)
+   CALENDÁRIO — CAROUSEL FINAL (sem bug)
 ========================= */
 
 .events-carousel{
@@ -454,89 +454,36 @@ body.menu-open .mobile-menu{ display:block; }
   overflow: hidden;
 }
 
-/* track */
+/* trilho */
 .events-carousel .events{
-  display: flex !important;
-  flex-direction: row !important;
-  gap: 0 !important;
+  display: flex;
   width: 100%;
   will-change: transform;
-  transform: translateX(0);
 }
 
-/* slide ocupa 100% */
+/* SLIDE = 100% do viewport */
 .events-carousel .event-row{
-  flex: 0 0 100% !important;
-  width: 100% !important;
-
-  /* centraliza o card */
-  display: flex !important;
-  justify-content: center !important;
-}
-
-/* o CARD é o article inteiro */
-.events-carousel .event-row{
-  padding: 0 !important;
-  border: 0 !important;
-  background: transparent !important;
-}
-
-/* caixa interna (o card bonito) */
-.events-carousel .event-row > .event-logo,
-.events-carousel .event-row > div{
+  flex: 0 0 100%;
   width: 100%;
+  display: flex;
+  justify-content: center;
 }
 
-/* wrapper interno: transforma o conteúdo do slide num único card */
-.events-carousel .event-row{
-  align-items: stretch !important;
-}
-
-.events-carousel .event-row{
-  /* cria um “card” único */
-}
-
-.events-carousel .event-row::before{
-  content: "";
-  display:none;
-}
-
-/* o card real */
-.events-carousel .event-row{
-  /* nada aqui */
-}
-
-.events-carousel .event-row > .event-logo,
-.events-carousel .event-row > div{
-  max-width: 560px;
-}
-
-/* CRIA UM CARD ÚNICO: coloca logo e texto dentro de um container visual */
-.events-carousel .event-row{
-  gap: 0;
-}
-
-.events-carousel .event-row{
-  /* sem mudanças */
-}
-
-/* card único: aplica visual no article e organiza interno */
-.events-carousel .event-row{
-  max-width: min(560px, 100%);
+/* CARD interno (aqui sim limita) */
+.events-carousel .event-row .event-card{
   width: min(560px, 100%);
   padding: 14px;
   border: 1px solid rgba(11,18,32,.10);
   border-radius: var(--radius);
   background: rgba(255,255,255,.78);
 
-  display: grid !important;
+  display: grid;
   gap: 12px;
 }
 
-/* garante que o logo fique bonitão */
+/* logo */
 .events-carousel .event-row .event-logo{
   border-radius: 14px;
   overflow: hidden;
-  border: 1px solid rgba(11,18,32,.10);
-  background: rgba(255,255,255,.70);
 }
+
