@@ -1,72 +1,61 @@
 window.addEventListener("DOMContentLoaded", () => {
   const viewport = document.querySelector(".events-carousel");
-  const track = document.querySelector(".events-carousel .events");
-  if (!viewport || !track) return;
+  const track = viewport?.querySelector("[data-carousel-track]");
+  const btnPrev = viewport?.querySelector("[data-carousel-prev]");
+  const btnNext = viewport?.querySelector("[data-carousel-next]");
 
-  // trava contra init duplicado
+  if (!viewport || !track || !btnPrev || !btnNext) return;
+
+  // trava anti-duplo-init
   if (viewport.dataset.carouselInit === "1") return;
+  viewport.dataset.carouselInit = "1";
 
   const slides = Array.from(track.children);
   const total = slides.length;
   if (total < 2) return;
 
-  // clones
-  const firstClone = slides[0].cloneNode(true);
-  const lastClone  = slides[total - 1].cloneNode(true);
-  track.appendChild(firstClone);
-  track.insertBefore(lastClone, slides[0]);
-
   let index = 0;
   let slideWidth = 0;
-  let isAnimating = false;
 
   function measure() {
     slideWidth = viewport.getBoundingClientRect().width;
   }
 
-  function jumpTo(i) {
+  function goTo(i, animate = true) {
     measure();
-    track.style.transition = "none";
-    track.style.transform = `translateX(${-(i + 1) * slideWidth}px)`;
-    track.offsetHeight; // força reflow
-  }
+    if (!animate) track.style.transition = "none";
+    else track.style.transition = "transform .35s ease";
 
-  function goTo(i) {
-    measure();
-    track.style.transition = "transform .6s ease";
-    track.style.transform = `translateX(${-(i + 1) * slideWidth}px)`;
-  }
+    track.style.transform = `translateX(${-i * slideWidth}px)`;
 
-  // espera a largura ficar válida (evita “vazio”)
-  function waitForWidth(tries = 0) {
-    measure();
-    if (slideWidth > 10) {
-      // marca iniciado só quando estiver OK
-      viewport.dataset.carouselInit = "1";
-      jumpTo(0);
-
-      window.addEventListener("resize", () => jumpTo(index));
-
-      track.addEventListener("transitionend", () => {
-        isAnimating = false;
-        if (index === total) {
-          index = 0;
-          jumpTo(index);
-        }
-      });
-
-      setInterval(() => {
-        if (isAnimating) return;
-        isAnimating = true;
-        index++;
-        goTo(index);
-      }, 5000);
-
-      return;
+    if (!animate) {
+      track.offsetHeight; // reflow
+      track.style.transition = "transform .35s ease";
     }
-
-    if (tries < 60) requestAnimationFrame(() => waitForWidth(tries + 1));
   }
 
-  waitForWidth();
+  function next() {
+    index = (index + 1) % total; // wrap
+    goTo(index, true);
+  }
+
+  function prev() {
+    index = (index - 1 + total) % total; // wrap
+    goTo(index, true);
+  }
+
+  btnNext.addEventListener("click", next);
+  btnPrev.addEventListener("click", prev);
+
+  // teclado (opcional)
+  viewport.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowRight") next();
+    if (e.key === "ArrowLeft") prev();
+  });
+  viewport.tabIndex = 0; // permite foco pra teclado
+
+  window.addEventListener("resize", () => goTo(index, false));
+
+  // inicial
+  goTo(0, false);
 });
