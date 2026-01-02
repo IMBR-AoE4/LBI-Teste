@@ -1,11 +1,10 @@
-window.addEventListener("load", () => {
+window.addEventListener("DOMContentLoaded", () => {
   const viewport = document.querySelector(".events-carousel");
   const track = document.querySelector(".events-carousel .events");
   if (!viewport || !track) return;
 
-  // ✅ trava para não inicializar duas vezes
+  // trava contra init duplicado
   if (viewport.dataset.carouselInit === "1") return;
-  viewport.dataset.carouselInit = "1";
 
   const slides = Array.from(track.children);
   const total = slides.length;
@@ -13,7 +12,7 @@ window.addEventListener("load", () => {
 
   // clones
   const firstClone = slides[0].cloneNode(true);
-  const lastClone = slides[total - 1].cloneNode(true);
+  const lastClone  = slides[total - 1].cloneNode(true);
   track.appendChild(firstClone);
   track.insertBefore(lastClone, slides[0]);
 
@@ -38,26 +37,36 @@ window.addEventListener("load", () => {
     track.style.transform = `translateX(${-(i + 1) * slideWidth}px)`;
   }
 
-  // start
-  jumpTo(0);
+  // espera a largura ficar válida (evita “vazio”)
+  function waitForWidth(tries = 0) {
+    measure();
+    if (slideWidth > 10) {
+      // marca iniciado só quando estiver OK
+      viewport.dataset.carouselInit = "1";
+      jumpTo(0);
 
-  window.addEventListener("resize", () => jumpTo(index));
+      window.addEventListener("resize", () => jumpTo(index));
 
-  track.addEventListener("transitionend", () => {
-    isAnimating = false;
+      track.addEventListener("transitionend", () => {
+        isAnimating = false;
+        if (index === total) {
+          index = 0;
+          jumpTo(index);
+        }
+      });
 
-    // caiu no clone do primeiro -> volta pro primeiro real
-    if (index === total) {
-      index = 0;
-      jumpTo(index);
+      setInterval(() => {
+        if (isAnimating) return;
+        isAnimating = true;
+        index++;
+        goTo(index);
+      }, 5000);
+
+      return;
     }
-  });
 
-  setInterval(() => {
-    if (isAnimating) return;
-    isAnimating = true;
+    if (tries < 60) requestAnimationFrame(() => waitForWidth(tries + 1));
+  }
 
-    index++;
-    goTo(index);
-  }, 5000);
+  waitForWidth();
 });
