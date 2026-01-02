@@ -1,45 +1,63 @@
-(() => {
+window.addEventListener("load", () => {
   const viewport = document.querySelector(".events-carousel");
   const track = document.querySelector(".events-carousel .events");
   if (!viewport || !track) return;
 
-  let slides = Array.from(track.children);
+  // ✅ trava para não inicializar duas vezes
+  if (viewport.dataset.carouselInit === "1") return;
+  viewport.dataset.carouselInit = "1";
+
+  const slides = Array.from(track.children);
   const total = slides.length;
   if (total < 2) return;
 
-  // clones para loop infinito
+  // clones
   const firstClone = slides[0].cloneNode(true);
-  const lastClone  = slides[total - 1].cloneNode(true);
-
+  const lastClone = slides[total - 1].cloneNode(true);
   track.appendChild(firstClone);
   track.insertBefore(lastClone, slides[0]);
 
   let index = 0;
-  let slideWidth = viewport.getBoundingClientRect().width;
+  let slideWidth = 0;
+  let isAnimating = false;
 
-  function setPosition(noAnim = true) {
+  function measure() {
     slideWidth = viewport.getBoundingClientRect().width;
-    track.style.transition = noAnim ? "none" : "transform .6s ease";
-    track.style.transform = `translateX(${-(index + 1) * slideWidth}px)`;
   }
 
-  // posição inicial (começa no 1º slide real)
-  setPosition(true);
+  function jumpTo(i) {
+    measure();
+    track.style.transition = "none";
+    track.style.transform = `translateX(${-(i + 1) * slideWidth}px)`;
+    track.offsetHeight; // força reflow
+  }
 
-  window.addEventListener("resize", () => setPosition(true));
+  function goTo(i) {
+    measure();
+    track.style.transition = "transform .6s ease";
+    track.style.transform = `translateX(${-(i + 1) * slideWidth}px)`;
+  }
 
-  function moveNext() {
-    index++;
-    setPosition(false);
+  // start
+  jumpTo(0);
 
-    // quando chega no clone do primeiro, volta pro primeiro real sem animação
+  window.addEventListener("resize", () => jumpTo(index));
+
+  track.addEventListener("transitionend", () => {
+    isAnimating = false;
+
+    // caiu no clone do primeiro -> volta pro primeiro real
     if (index === total) {
-      setTimeout(() => {
-        index = 0;
-        setPosition(true);
-      }, 650);
+      index = 0;
+      jumpTo(index);
     }
-  }
+  });
 
-  setInterval(moveNext, 5000);
-})();
+  setInterval(() => {
+    if (isAnimating) return;
+    isAnimating = true;
+
+    index++;
+    goTo(index);
+  }, 5000);
+});
