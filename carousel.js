@@ -3,7 +3,7 @@ window.addEventListener("DOMContentLoaded", () => {
   const track = viewport?.querySelector("[data-carousel-track]");
   const btnPrev = viewport?.querySelector("[data-carousel-prev]");
   const btnNext = viewport?.querySelector("[data-carousel-next]");
-  const view = viewport?.querySelector(".events"); // a “janela” visível dos cards
+  const view = viewport?.querySelector(".events");
 
   if (!viewport || !track || !btnPrev || !btnNext || !view) return;
 
@@ -14,65 +14,60 @@ window.addEventListener("DOMContentLoaded", () => {
   const total = slides.length;
   if (total < 2) return;
 
-  let index = 0;
+  let page = 0;
   let step = 0;
-  let maxIndex = 0;
+  let perPage = 1;
+  let maxPage = 0;
 
   function measure() {
-    const first = slides[0];
+    const slide = slides[0];
     const gap = parseInt(getComputedStyle(track).gap || 0, 10);
-    step = first.offsetWidth + gap;
+    const slideWidth = slide.offsetWidth + gap;
 
-    // quantos cards CABEM inteiros na janela
-    const visibleCount = Math.max(1, Math.floor((view.clientWidth + gap) / step));
+    const viewWidth = view.clientWidth + gap;
+    perPage = Math.max(1, Math.floor(viewWidth / slideWidth));
 
-    // último índice que ainda mostra cards inteiros (sem “vazio” no final)
-    maxIndex = Math.max(0, total - visibleCount);
+    step = slideWidth * perPage;
+    maxPage = Math.max(0, Math.ceil(total / perPage) - 1);
 
-    // garante index válido depois de resize
-    index = Math.min(Math.max(index, 0), maxIndex);
+    page = Math.min(page, maxPage);
   }
 
   function updateButtons() {
-    btnPrev.disabled = index <= 0;
-    btnNext.disabled = index >= maxIndex;
+    btnPrev.disabled = page === 0;
+    btnNext.disabled = page === maxPage;
 
-    // estilo “Apple” quando desabilitado (se quiser)
     btnPrev.style.opacity = btnPrev.disabled ? "0.35" : "1";
     btnNext.style.opacity = btnNext.disabled ? "0.35" : "1";
     btnPrev.style.pointerEvents = btnPrev.disabled ? "none" : "auto";
     btnNext.style.pointerEvents = btnNext.disabled ? "none" : "auto";
   }
 
-  function goTo(i, animate = true) {
+  function goTo(p, animate = true) {
     measure();
-
-    index = Math.min(Math.max(i, 0), maxIndex);
+    page = Math.min(Math.max(p, 0), maxPage);
 
     track.style.transition = animate ? "transform .35s ease" : "none";
-    track.style.transform = `translateX(${-index * step}px)`;
+    track.style.transform = `translateX(${-page * step}px)`;
 
     if (!animate) {
-      track.offsetHeight; // reflow
+      track.offsetHeight;
       track.style.transition = "transform .35s ease";
     }
 
     updateButtons();
   }
 
-  function next() { goTo(index + 1, true); }
-  function prev() { goTo(index - 1, true); }
-
-  btnNext.addEventListener("click", next);
-  btnPrev.addEventListener("click", prev);
+  btnNext.addEventListener("click", () => goTo(page + 1));
+  btnPrev.addEventListener("click", () => goTo(page - 1));
 
   viewport.addEventListener("keydown", (e) => {
-    if (e.key === "ArrowRight") next();
-    if (e.key === "ArrowLeft") prev();
+    if (e.key === "ArrowRight") goTo(page + 1);
+    if (e.key === "ArrowLeft") goTo(page - 1);
   });
   viewport.tabIndex = 0;
 
-  window.addEventListener("resize", () => goTo(index, false));
+  window.addEventListener("resize", () => goTo(page, false));
 
   goTo(0, false);
 });
